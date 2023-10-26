@@ -1,0 +1,67 @@
+import "http"
+import "json"
+import "strings"
+
+vault_addr = "${vault_addr}"
+role_id = "${role_id}"
+secret_id = "${secret_id}"
+approle_mount_path = "${approle_mount_path}"
+this_namespace = strings.trim_suffix(namespace.path, "/")
+
+vault_login = func() {
+  req_path = "/v1/auth/" + approle_mount_path + "/login"
+  req = http.request(vault_addr + req_path).
+    with_header("X-Vault-Namespace", this_namespace).
+    with_body(json.marshal({"role_id": role_id, "secret_id": secret_id}))
+
+  resp = http.accept_status_codes([200, 429]).post(req)
+  if resp.status_code is 429 {
+    print(json.unmarshal(resp.body))
+    return false
+  }
+  body = json.unmarshal(resp.body)
+  return body["auth"]["client_token"]
+}
+
+validate_kv = func() {
+  token = vault_login()
+  if token is false {
+    return false
+  }
+  
+  req_path = "/v1/" + request.path
+  req = http.request(vault_addr + req_path).
+    with_header("X-Vault-Token", token).
+    with_header("X-Vault-Namespace", this_namespace)
+  resp = http.accept_status_codes([200, 404, 429]).get(req)
+
+  if resp.status_code is 404 {
+    return true
+  }
+
+  if resp.status_code is 429 {
+    print(json.unmarshal(resp.body))
+    return false
+  }
+
+  current_kv_content = json.unmarshal(resp.body)
+  for request.data.data as k, v {
+    for current_kv_content.data.data as x, y {
+      if k is x {
+        if v is y {
+          print("FOUND_VALUE_MATCH_ON_KEY:" + k)
+          return false
+        }
+      }
+    }
+  }
+  return true
+}
+
+precond = rule {
+  request.operation is "update" or request.operation is "patch"
+}
+
+main = rule when precond {
+  validate_kv()
+}
