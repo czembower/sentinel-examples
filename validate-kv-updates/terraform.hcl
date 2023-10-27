@@ -31,7 +31,7 @@ resource "vault_approle_auth_backend_role_secret_id" "sentinel_kv" {
 }
 
 resource "vault_policy" "sentinel_kv" {
-  name      = "sentinel-kv"
+  name = "sentinel-kv"
 
   policy = <<EOT
 path "kv/*" {
